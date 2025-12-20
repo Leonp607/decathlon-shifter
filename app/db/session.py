@@ -1,7 +1,11 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from app.core.config import settings
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./decathlon.db"
+
+
+SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
+
 
 #Bridge between python and sqlite
 engine = create_engine(

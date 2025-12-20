@@ -1,5 +1,15 @@
-.venv/
+# Python
 __pycache__/
-*.db
+*.py[cod]
+.venv/
+venv/
+
+# Environment
 .env
+
+# Database
+*.db
+
+# IDEs
 .vscode/
+.idea/
