@@ -5,6 +5,7 @@ from app.api import deps
 from app.crud import crud_user
 from app.schemas.user import UserCreate, UserOut
 from app.api.deps import oauth2_scheme
+from app.db.models.user import User  # וודא שהשורה הזו קיימת
 
 router = APIRouter()
 
@@ -23,5 +24,12 @@ def create_new_user(user_in: UserCreate,db: Session = Depends(deps.get_db)) -> A
 def test_token(token: str = Depends(oauth2_scheme)) -> Any:
     return {"message": "Success!", "your_token": token}
 
-
+@router.get("/me", response_model=UserOut)
+def read_user_me(
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    מחזיר את פרטי המשתמש המחובר (כולל ה-Role שלו)
+    """
+    return current_user
 

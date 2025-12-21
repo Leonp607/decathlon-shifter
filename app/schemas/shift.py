@@ -1,6 +1,7 @@
 from pydantic import BaseModel, field_validator
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
+
 
 class ShiftBase(BaseModel):
     user_id: str
@@ -30,3 +31,13 @@ class ShiftSummary(BaseModel):
     evening: int   # 18:00 - 23:00
     total: int
 
+class DaySchedule(BaseModel):
+    date: str
+    morning_staff: List[str]   # שמות העובדים
+    afternoon_staff: List[str]
+    evening_staff: List[str]
+    counts: dict               # למשל: {"morning": 2, "afternoon": 1, "evening": 3}
+
+class WeeklyReport(BaseModel):
+    branch_id: int
+    schedule: List[DaySchedule]
