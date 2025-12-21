@@ -91,3 +91,21 @@ def get_weekly_board_view(
 
     schedule = crud_shift.get_weekly_board(db, branch_id=branch_id, start_date=start_date)
     return {"branch_id": branch_id, "schedule": schedule}
+
+
+@router.put("/{shift_id}", response_model=ShiftOut)
+def update_existing_shift(
+        shift_id: int,
+        shift_in: ShiftCreate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_user)
+):
+    # רק Store Leader יכול לעדכן
+    if current_user.role.lower() != "store leader":
+        raise HTTPException(status_code=403, detail="Only a Store Leader can update shifts")
+
+    updated_shift = crud_shift.update_shift(db, shift_id=shift_id, shift_in=shift_in)
+    if not updated_shift:
+        raise HTTPException(status_code=404, detail="Shift not found")
+
+    return updated_shift

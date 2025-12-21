@@ -108,3 +108,38 @@ def get_weekly_board(db: Session, branch_id: int, start_date: date):
         weekly_data.append(day_info)
 
     return weekly_data
+
+def update_shift(db: Session, shift_id: int, shift_in: ShiftCreate):
+    # 1. מציאת המשמרת הקיימת
+    db_shift = db.query(Shift).filter(Shift.id == shift_id).first()
+    if not db_shift:
+        return None
+
+    # 2. בדיקת חפיפה (מוודאים שהזמן החדש לא מתנגש עם משמרות אחרות של אותו עובד)
+    # אנחנו מחפשים חפיפה, אבל מוסיפים תנאי שה-ID לא יהיה ה-ID של המשמרת שאנחנו עורכים כרגע
+    overlap = db.query(Shift).filter(
+        Shift.user_id == shift_in.user_id,
+        Shift.id != shift_id,  # אל תבדוק חפיפה מול עצמי
+        and_(
+            Shift.start_time < shift_in.end_time,
+            Shift.end_time > shift_in.start_time
+        )
+    ).first()
+
+    if overlap:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Conflict: Employee already has another shift from {overlap.start_time.strftime('%H:%M')} to {overlap.end_time.strftime('%H:%M')}"
+        )
+
+    # 3. עדכון הנתונים
+    db_shift.start_time = shift_in.start_time
+    db_shift.end_time = shift_in.end_time
+    db_shift.position = shift_in.position
+    db_shift.notes = shift_in.notes
+    db_shift.user_id = shift_in.user_id
+    db_shift.branch_id = shift_in.branch_id
+
+    db.commit()
+    db.refresh(db_shift)
+    return db_shift
