@@ -12,4 +12,4 @@ class User(Base):
     role = Column(String, nullable=False)
     branch_id = Column(Integer, ForeignKey("branches.id"))
     branch = relationship("Branch", back_populates="users")
-
+    shifts = relationship("Shift", back_populates="user")
