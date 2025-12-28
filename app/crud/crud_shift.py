@@ -57,11 +57,28 @@ def get_shift_summary(db: Session, branch_id: int, target_date: date):
 
     for s in shifts:
         hour = s.start_time.hour
-        if 6 <= hour < 14:
+        minute = s.start_time.minute
+        
+        # Morning: 8:00 to 15:00 (shifts starting 8:00-10:59)
+        # Middle: 11:00 to 19:30 (shifts starting 11:00-19:29)
+        # Evening: 15:00 to 22:15 (shifts starting 15:00-22:14)
+        if 8 <= hour < 11:
             summary["morning"] += 1
-        elif 14 <= hour < 18:
+        elif 11 <= hour < 15:
             summary["afternoon"] += 1
+        elif 15 <= hour < 19:
+            summary["evening"] += 1
+        elif hour == 19:
+            if minute < 30:
+                summary["afternoon"] += 1
+            else:
+                summary["evening"] += 1
+        elif hour == 20 or hour == 21:
+            summary["evening"] += 1
+        elif hour == 22 and minute <= 15:
+            summary["evening"] += 1
         else:
+            # Shifts outside normal hours go to evening
             summary["evening"] += 1
     return summary
 
@@ -78,11 +95,15 @@ def get_weekly_board(db: Session, branch_id: int, start_date: date):
             Shift.start_time <= datetime.combine(current_date, datetime.max.time())
         ).all()
 
+        # Initialize position-based structure
         day_info = {
             "date": current_date.isoformat(),
             "morning_staff": [],
             "afternoon_staff": [],
             "evening_staff": [],
+            "morning_by_position": {},
+            "afternoon_by_position": {},
+            "evening_by_position": {},
             "counts": {"morning": 0, "afternoon": 0, "evening": 0}
         }
 
@@ -93,21 +114,134 @@ def get_weekly_board(db: Session, branch_id: int, start_date: date):
             else:
                 full_name = f"Unknown User ({s.user_id})"
 
-            hour = s.start_time.hour
+            # Get local time (handle timezone if needed)
+            start_time_local = s.start_time
+            # If timezone-aware, convert to naive local time
+            if start_time_local.tzinfo is not None:
+                # Convert to local timezone (assuming UTC, adjust if needed)
+                start_time_local = start_time_local.replace(tzinfo=None)
+            
+            hour = start_time_local.hour
+            minute = start_time_local.minute
+            position = s.position or "Unknown"
 
-            if 6 <= hour < 12:
+            # Initialize position list if not exists
+            if position not in day_info["morning_by_position"]:
+                day_info["morning_by_position"][position] = []
+            if position not in day_info["afternoon_by_position"]:
+                day_info["afternoon_by_position"][position] = []
+            if position not in day_info["evening_by_position"]:
+                day_info["evening_by_position"][position] = []
+
+            # Morning: 8:00 to 15:00 (shifts starting 8:00-14:59 should be morning)
+            # Middle: 11:00 to 19:30 (shifts starting 11:00-19:29 should be middle)
+            # Evening: 15:00 to 22:15 (shifts starting 15:00-22:14 should be evening)
+            # Note: There's overlap, so we prioritize based on start time
+            
+            # Debug: Print shift info for troubleshooting (uncomment if needed)
+            # print(f"DEBUG Shift: {full_name}, Start: {start_time_local}, Hour: {hour}, Minute: {minute}, Position: {position}, Date: {current_date}")
+            
+            # Create employee info object with name and notes
+            employee_info = {
+                "name": full_name,
+                "notes": s.notes if s.notes else None
+            }
+            
+            if 8 <= hour < 11:
+                # 8:00-10:59 → Morning
                 day_info["morning_staff"].append(full_name)
+                day_info["morning_by_position"][position].append(employee_info)
                 day_info["counts"]["morning"] += 1
-            elif 12 <= hour < 17:
+            elif 11 <= hour < 15:
+                # 11:00-14:59 → Middle (in the middle range, even though it overlaps with morning)
                 day_info["afternoon_staff"].append(full_name)
+                day_info["afternoon_by_position"][position].append(employee_info)
                 day_info["counts"]["afternoon"] += 1
-            else:
+            elif 15 <= hour < 19:
+                # 15:00-18:59 → Evening (15:00 is start of evening range)
                 day_info["evening_staff"].append(full_name)
+                day_info["evening_by_position"][position].append(employee_info)
                 day_info["counts"]["evening"] += 1
+            elif hour == 19:
+                if minute < 30:
+                    # 19:00-19:29 → Middle
+                    day_info["afternoon_staff"].append(full_name)
+                    day_info["afternoon_by_position"][position].append(employee_info)
+                    day_info["counts"]["afternoon"] += 1
+                else:
+                    # 19:30-19:59 → Evening
+                    day_info["evening_staff"].append(full_name)
+                    day_info["evening_by_position"][position].append(employee_info)
+                    day_info["counts"]["evening"] += 1
+            elif 20 <= hour <= 21:
+                # 20:00-21:59 → Evening
+                day_info["evening_staff"].append(full_name)
+                day_info["evening_by_position"][position].append(employee_info)
+                day_info["counts"]["evening"] += 1
+            elif hour == 22 and minute <= 15:
+                # 22:00-22:15 → Evening
+                day_info["evening_staff"].append(full_name)
+                day_info["evening_by_position"][position].append(employee_info)
+                day_info["counts"]["evening"] += 1
+            else:
+                # Shifts outside normal hours - check if it's early morning (0-7) or late (22:16-23:59)
+                if hour < 8:
+                    # Very early shifts (0:00-7:59) - could be morning or previous day's evening
+                    # For now, put in evening
+                    day_info["evening_staff"].append(full_name)
+                    day_info["evening_by_position"][position].append(employee_info)
+                    day_info["counts"]["evening"] += 1
+                else:
+                    # Late shifts (22:16-23:59) → Evening
+                    day_info["evening_staff"].append(full_name)
+                    day_info["evening_by_position"][position].append(employee_info)
+                    day_info["counts"]["evening"] += 1
 
         weekly_data.append(day_info)
 
     return weekly_data
+
+def get_hours_by_position_weekly(db: Session, branch_id: int, start_date: date):
+    """
+    Calculate total hours worked per position for a week
+    Returns a dictionary with position as key and total hours as value
+    """
+    end_date = start_date + timedelta(days=6)
+    
+    shifts = db.query(Shift).filter(
+        Shift.branch_id == branch_id,
+        Shift.start_time >= datetime.combine(start_date, datetime.min.time()),
+        Shift.start_time <= datetime.combine(end_date, datetime.max.time())
+    ).all()
+    
+    hours_by_position = {}
+    
+    for shift in shifts:
+        position = shift.position or "Unknown"
+        
+        # Calculate hours
+        duration = shift.end_time - shift.start_time
+        hours = duration.total_seconds() / 3600  # Convert to hours
+        
+        if position not in hours_by_position:
+            hours_by_position[position] = 0
+        
+        hours_by_position[position] += hours
+    
+    return hours_by_position
+
+
+def get_shifts_by_employee(db: Session, branch_id: int, user_id: str):
+    """
+    Get all shifts for a specific employee in a branch
+    """
+    shifts = db.query(Shift).filter(
+        Shift.branch_id == branch_id,
+        Shift.user_id == user_id
+    ).order_by(Shift.start_time.desc()).all()
+    
+    return shifts
+
 
 def update_shift(db: Session, shift_id: int, shift_in: ShiftCreate):
     # 1. מציאת המשמרת הקיימת

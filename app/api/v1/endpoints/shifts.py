@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.crud import crud_shift
-from app.schemas.shift import ShiftOut, ShiftCreate, ShiftSummary, WeeklyReport
+from app.schemas.shift import ShiftOut, ShiftCreate, ShiftSummary, WeeklyReport, WeeklyHoursReport
 from app.db.models.user import User
 from datetime import date
 
@@ -109,3 +109,56 @@ def update_existing_shift(
         raise HTTPException(status_code=404, detail="Shift not found")
 
     return updated_shift
+
+
+@router.get("/weekly-hours/{branch_id}", response_model=WeeklyHoursReport)
+def get_weekly_hours_by_position(
+        branch_id: int,
+        start_date: date,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Get total hours worked per position for a specific week
+    """
+    hours_by_position = crud_shift.get_hours_by_position_weekly(
+        db, branch_id=branch_id, start_date=start_date
+    )
+    return {
+        "branch_id": branch_id,
+        "week_start": str(start_date),
+        "hours_by_position": hours_by_position
+    }
+
+
+@router.get("/employee/{branch_id}/{user_id}", response_model=List[ShiftOut])
+def get_shifts_by_employee(
+        branch_id: int,
+        user_id: str,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Get all shifts for a specific employee
+    """
+    shifts = crud_shift.get_shifts_by_employee(db, branch_id=branch_id, user_id=user_id)
+    return shifts
+
+
+@router.get("/my-shifts", response_model=List[ShiftOut])
+def get_my_shifts(
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Get all shifts for the currently authenticated user
+    """
+    if not current_user.branch_id:
+        return []
+    
+    shifts = crud_shift.get_shifts_by_employee(
+        db, 
+        branch_id=current_user.branch_id, 
+        user_id=current_user.id
+    )
+    return shifts

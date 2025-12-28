@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import Any
+from typing import Any, List
 from app.api import deps
 from app.crud import crud_user
 from app.schemas.user import UserCreate, UserOut
@@ -33,3 +33,19 @@ def read_user_me(
     """
     return current_user
 
+
+@router.get("/branch-staff/{branch_id}", response_model=List[UserOut])
+def get_staff_by_branch(
+        branch_id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_user)
+):
+    """
+    מחזיר את כל העובדים ששייכים לסניף מסוים (לצורך בחירה בתוך רשימה)
+    """
+    # רק מנהל יכול לראות את כל רשימת העובדים
+    if current_user.role.lower() != "store leader":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    users = db.query(User).filter(User.branch_id == branch_id).all()
+    return users

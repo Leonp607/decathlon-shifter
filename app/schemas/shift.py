@@ -36,8 +36,20 @@ class DaySchedule(BaseModel):
     morning_staff: List[str]   # שמות העובדים
     afternoon_staff: List[str]
     evening_staff: List[str]
+    morning_by_position: dict = {}  # Grouped by position
+    afternoon_by_position: dict = {}  # Grouped by position
+    evening_by_position: dict = {}  # Grouped by position
     counts: dict               # למשל: {"morning": 2, "afternoon": 1, "evening": 3}
 
 class WeeklyReport(BaseModel):
     branch_id: int
     schedule: List[DaySchedule]
+
+class HoursByPosition(BaseModel):
+    position: str
+    hours: float
+
+class WeeklyHoursReport(BaseModel):
+    branch_id: int
+    week_start: str
+    hours_by_position: dict  # {position: hours}
